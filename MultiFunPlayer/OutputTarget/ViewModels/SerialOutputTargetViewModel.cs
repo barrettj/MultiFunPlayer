@@ -108,6 +108,14 @@ public class SerialOutputTargetViewModel : ThreadAbstractOutputTarget
 
                 var dirtyValues = Values.Where(x => DeviceAxis.IsDirty(x.Value, lastSentValues[x.Key]));
                 var commands = DeviceAxis.ToString(dirtyValues, UpdateInterval);
+                // ISSUE: (no external bug tracker) Issue w/ Tempest firmware as of December 2021 where sometimes the last character is dropped
+                // FIX: this ensures the last character can be safely discarded as long as the user isn't using axis A9
+                // FUTURE: remove this fix when no longer necessary for the firmware
+                if (!commands.Contains("A9"))
+                {
+                    commands += "A90";
+                }
+                // End FIX
                 if (serialPort?.IsOpen == true && !string.IsNullOrWhiteSpace(commands))
                 {
                     Logger.Trace("Sending \"{0}\" to \"{1}\"", commands.Trim(), SelectedComPort);
