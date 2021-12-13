@@ -111,9 +111,9 @@ public class SerialOutputTargetViewModel : ThreadAbstractOutputTarget
                 // ISSUE: (no external bug tracker) Issue w/ Tempest firmware as of December 2021 where sometimes the last character is dropped
                 // FIX: this ensures the last character can be safely discarded as long as the user isn't using axis A9
                 // FUTURE: remove this fix when no longer necessary for the firmware
-                if (!commands.Contains("A9"))
+                if (commands.Trim().Length > 0 && !commands.Contains("A"))
                 {
-                    commands += "A90";
+                    commands = commands.Replace("\n", " A90\n");
                 }
                 // End FIX
                 if (serialPort?.IsOpen == true && !string.IsNullOrWhiteSpace(commands))
