@@ -3,6 +3,7 @@ using MultiFunPlayer.Common.Messages;
 using MultiFunPlayer.Input;
 using MultiFunPlayer.Settings;
 using Newtonsoft.Json.Linq;
+using NLog;
 using Stylet;
 using System.ComponentModel;
 using System.Reflection;
@@ -20,20 +21,43 @@ public interface IMotionProviderManager
 
 public class MotionProviderManager : IMotionProviderManager, IHandle<AppSettingsMessage>
 {
+    protected Logger Logger = LogManager.GetCurrentClassLogger();
+
+    private readonly IEventAggregator _eventAggregator;
     private readonly HashSet<string> _motionProviderNames;
     private readonly Dictionary<DeviceAxis, Dictionary<string, IMotionProvider>> _motionProviders;
 
     public IEnumerable<string> MotionProviderNames => _motionProviderNames;
 
-    public MotionProviderManager(IEventAggregator eventAggregator)
+    public MotionProviderManager(IEventAggregator eventAggregator, Func<IEnumerable<IMotionProvider>> motionProviderFactory)
     {
-        eventAggregator.Subscribe(this);
+        _eventAggregator = eventAggregator;
+        _eventAggregator.Subscribe(this);
 
         var motionProviderTypes = ReflectionUtils.FindImplementations<IMotionProvider>();
         _motionProviderNames = motionProviderTypes.Select(t => t.GetCustomAttribute<DisplayNameAttribute>(inherit: false).DisplayName)
                                                   .ToHashSet();
-        _motionProviders = DeviceAxis.All.ToDictionary(a => a, a => motionProviderTypes.ToDictionary(t => t.GetCustomAttribute<DisplayNameAttribute>(inherit: false).DisplayName,
-                                                                                                     t => (IMotionProvider)Activator.CreateInstance(t)));
+        _motionProviders = DeviceAxis.All.ToDictionary(a => a, a => motionProviderFactory().ToDictionary(p => p.GetType().GetCustomAttribute<DisplayNameAttribute>(inherit: false).DisplayName, 
+                                                                                                         p => p));
+
+        foreach(var (_, motionProviders) in _motionProviders)
+            foreach(var (_, motionProvider) in motionProviders)
+                motionProvider.SyncRequest += OnMotionProviderSyncRequest;
+    }
+
+    private void OnMotionProviderSyncRequest(object sender, EventArgs e)
+    {
+        if (sender is not IMotionProvider motionProvider)
+            return;
+
+        var axis = GetDeviceAxis(motionProvider);
+        if(axis == null)
+        {
+            Logger.Warn("Could not find motion provider for axis! [Axis: {0}, Name: {1}]", axis, motionProvider.Name);
+            return;
+        }
+
+        _eventAggregator.Publish(new SyncRequestMessage(axis));
     }
 
     public IMotionProvider GetMotionProvider(DeviceAxis axis, string motionProviderName)
@@ -46,6 +70,16 @@ public class MotionProviderManager : IMotionProviderManager, IHandle<AppSettings
             return null;
 
         return motionProvider;
+    }
+
+    private DeviceAxis GetDeviceAxis(IMotionProvider provider)
+    {
+        foreach (var (axis, motionProviders) in _motionProviders)
+            foreach (var (_, motionProvider) in motionProviders)
+                if (motionProvider == provider)
+                    return axis;
+        
+        return null;
     }
 
     public float? Update(DeviceAxis axis, string motionProviderName, float deltaTime)
@@ -66,8 +100,17 @@ public class MotionProviderManager : IMotionProviderManager, IHandle<AppSettings
             if (message.Settings.TryGetValue<Dictionary<DeviceAxis, List<TypedValue>>>("MotionProvider", out var motionProviderMap))
             {
                 foreach (var (axis, motionProviders) in motionProviderMap)
+                {
                     foreach (var motionProvider in motionProviders.Select(x => x.Value as IMotionProvider))
+                    {
+                        var currentMotionProvider = _motionProviders[axis][motionProvider.Name];
+                        if (currentMotionProvider != null)
+                            currentMotionProvider.SyncRequest -= OnMotionProviderSyncRequest;
+
+                        motionProvider.SyncRequest += OnMotionProviderSyncRequest;
                         _motionProviders[axis][motionProvider.Name] = motionProvider;
+                    }
+                }
             }
         }
     }
@@ -79,26 +122,26 @@ public class MotionProviderManager : IMotionProviderManager, IHandle<AppSettings
             #region MotionProvider::Speed
             s.RegisterAction($"MotionProvider::{name}::Speed::Offset",
             b => b.WithSetting<DeviceAxis>(p => p.WithLabel("Target axis").WithItemsSource(DeviceAxis.All))
-                  .WithSetting<float>(p => p.WithLabel("Value offset"))
+                  .WithSetting<float>(p => p.WithLabel("Value offset").WithStringFormat("{}{0}%"))
                   .WithCallback((_, axis, offset) =>
                   {
                       var motionProvider = GetMotionProvider(axis, name);
                       if (motionProvider == null)
                           return;
 
-                      motionProvider.Speed = MathF.Max(0.01f, motionProvider.Speed + offset);
+                      motionProvider.Speed = MathF.Max(0.01f, motionProvider.Speed + offset / 100);
                   }));
 
             s.RegisterAction($"MotionProvider::{name}::Speed::Set",
                 b => b.WithSetting<DeviceAxis>(p => p.WithLabel("Target axis").WithItemsSource(DeviceAxis.All))
-                      .WithSetting<float>(p => p.WithLabel("Value"))
+                      .WithSetting<float>(p => p.WithLabel("Value").WithStringFormat("{}{0}%"))
                       .WithCallback((_, axis, value) =>
                       {
                           var motionProvider = GetMotionProvider(axis, name);
                           if (motionProvider == null)
                               return;
 
-                          motionProvider.Speed = MathF.Max(0.01f, value);
+                          motionProvider.Speed = MathF.Max(0.01f, value / 100);
                       }));
 
             s.RegisterAction($"MotionProvider::{name}::Speed::Drive",
@@ -119,7 +162,7 @@ public class MotionProviderManager : IMotionProviderManager, IHandle<AppSettings
             #region MotionProvider::Minimum
             s.RegisterAction($"MotionProvider::{name}::Minimum::Offset",
             b => b.WithSetting<DeviceAxis>(p => p.WithLabel("Target axis").WithItemsSource(DeviceAxis.All))
-                  .WithSetting<float>(p => p.WithLabel("Value offset"))
+                  .WithSetting<float>(p => p.WithLabel("Value offset").WithStringFormat("{}{0}%"))
                   .WithCallback((_, axis, offset) =>
                   {
                       var motionProvider = GetMotionProvider(axis, name);
@@ -131,7 +174,7 @@ public class MotionProviderManager : IMotionProviderManager, IHandle<AppSettings
 
             s.RegisterAction($"MotionProvider::{name}::Minimum::Set",
                 b => b.WithSetting<DeviceAxis>(p => p.WithLabel("Target axis").WithItemsSource(DeviceAxis.All))
-                      .WithSetting<float>(p => p.WithLabel("Value"))
+                      .WithSetting<float>(p => p.WithLabel("Value").WithStringFormat("{}{0}%"))
                       .WithCallback((_, axis, value) =>
                       {
                           var motionProvider = GetMotionProvider(axis, name);
@@ -159,7 +202,7 @@ public class MotionProviderManager : IMotionProviderManager, IHandle<AppSettings
             #region MotionProvider::Maximum
             s.RegisterAction($"MotionProvider::{name}::Maximum::Offset",
             b => b.WithSetting<DeviceAxis>(p => p.WithLabel("Target axis").WithItemsSource(DeviceAxis.All))
-                  .WithSetting<float>(p => p.WithLabel("Value offset"))
+                  .WithSetting<float>(p => p.WithLabel("Value offset").WithStringFormat("{}{0}%"))
                   .WithCallback((_, axis, offset) =>
                   {
                       var motionProvider = GetMotionProvider(axis, name);
@@ -171,7 +214,7 @@ public class MotionProviderManager : IMotionProviderManager, IHandle<AppSettings
 
             s.RegisterAction($"MotionProvider::{name}::Maximum::Set",
                 b => b.WithSetting<DeviceAxis>(p => p.WithLabel("Target axis").WithItemsSource(DeviceAxis.All))
-                      .WithSetting<float>(p => p.WithLabel("Value"))
+                      .WithSetting<float>(p => p.WithLabel("Value").WithStringFormat("{}{0}%"))
                       .WithCallback((_, axis, value) =>
                       {
                           var motionProvider = GetMotionProvider(axis, name);

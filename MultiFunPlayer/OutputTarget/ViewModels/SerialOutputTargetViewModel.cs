@@ -20,13 +20,13 @@ public class SerialOutputTargetViewModel : ThreadAbstractOutputTarget
 
     public override ConnectionStatus Status { get; protected set; }
 
-    public BindableCollection<string> ComPorts { get; set; }
+    public ObservableConcurrentCollection<string> ComPorts { get; set; }
     public string SelectedComPort { get; set; }
 
     public SerialOutputTargetViewModel(IShortcutManager shortcutManager, IEventAggregator eventAggregator, IDeviceAxisValueProvider valueProvider)
         : base(shortcutManager, eventAggregator, valueProvider)
     {
-        ComPorts = new BindableCollection<string>(SerialPort.GetPortNames());
+        ComPorts = new ObservableConcurrentCollection<string>(SerialPort.GetPortNames());
     }
 
     public bool CanChangePort => !IsRefreshBusy && !IsConnectBusy && !IsConnected;
@@ -100,6 +100,8 @@ public class SerialOutputTargetViewModel : ThreadAbstractOutputTarget
 
         try
         {
+            EventAggregator.Publish(new SyncRequestMessage());
+
             var stopwatch = Stopwatch.StartNew();
             var lastSentValues = DeviceAxis.All.ToDictionary(a => a, _ => float.NaN);
             while (!token.IsCancellationRequested && serialPort?.IsOpen == true)

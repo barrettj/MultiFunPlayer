@@ -26,7 +26,7 @@ namespace MultiFunPlayer.UI.Controls.ViewModels;
 
 [JsonObject(MemberSerialization = MemberSerialization.OptIn)]
 public class ScriptViewModel : Screen, IDeviceAxisValueProvider, IDisposable,
-    IHandle<VideoPositionMessage>, IHandle<VideoPlayingMessage>, IHandle<VideoFileChangedMessage>, IHandle<VideoDurationMessage>, IHandle<VideoSpeedMessage>, IHandle<AppSettingsMessage>
+    IHandle<VideoPositionMessage>, IHandle<VideoPlayingMessage>, IHandle<VideoFileChangedMessage>, IHandle<VideoDurationMessage>, IHandle<VideoSpeedMessage>, IHandle<AppSettingsMessage>, IHandle<SyncRequestMessage>
 {
     protected Logger Logger = LogManager.GetCurrentClassLogger();
 
@@ -55,8 +55,8 @@ public class ScriptViewModel : Screen, IDeviceAxisValueProvider, IDisposable,
     [JsonProperty] public bool VideoContentVisible { get; set; } = true;
     [JsonProperty] public bool AxisContentVisible { get; set; } = false;
     [JsonProperty] public ObservableConcurrentDictionaryView<DeviceAxis, AxisModel, AxisSettings> AxisSettings { get; }
-    [JsonProperty(ItemTypeNameHandling = TypeNameHandling.Objects)] public BindableCollection<IMediaPathModifier> VideoPathModifiers => _mediaResourceFactory.PathModifiers;
-    [JsonProperty] public BindableCollection<ScriptLibrary> ScriptLibraries { get; }
+    [JsonProperty(ItemTypeNameHandling = TypeNameHandling.Objects)] public ObservableConcurrentCollection<IMediaPathModifier> VideoPathModifiers => _mediaResourceFactory.PathModifiers;
+    [JsonProperty] public ObservableConcurrentCollection<ScriptLibrary> ScriptLibraries { get; }
     [JsonProperty] public SyncSettings SyncSettings { get; set; }
     [JsonProperty] public bool HeatmapShowStrokeLength { get; set; }
     [JsonProperty] public int HeatmapBucketCount { get; set; } = 333;
@@ -76,7 +76,7 @@ public class ScriptViewModel : Screen, IDeviceAxisValueProvider, IDisposable,
         VideoPathModifierTypes = ReflectionUtils.FindImplementations<IMediaPathModifier>()
                                                 .ToDictionary(t => t.GetCustomAttribute<DisplayNameAttribute>(inherit: false).DisplayName, t => t);
 
-        ScriptLibraries = new BindableCollection<ScriptLibrary>();
+        ScriptLibraries = new ObservableConcurrentCollection<ScriptLibrary>();
         SyncSettings = new SyncSettings();
 
         VideoFile = null;
@@ -194,12 +194,16 @@ public class ScriptViewModel : Screen, IDeviceAxisValueProvider, IDisposable,
                     state.Index++;
 
                 if (beforeIndex == -1 && state.Index >= 0)
+                {
+                    Logger.Debug("Resetting sync on script start [Axis: {0}]", axis);
                     state.SyncTime = 0;
+                }
 
                 if (!keyframes.ValidateIndex(state.Index) || !keyframes.ValidateIndex(state.Index + 1))
                 {
                     if (state.Index + 1 >= keyframes.Count)
                     {
+                        Logger.Debug("Resetting sync on script end [Axis: {0}]", axis);
                         state.Invalidate(true);
                         state.SyncTime = 0;
                     }
@@ -235,11 +239,11 @@ public class ScriptViewModel : Screen, IDeviceAxisValueProvider, IDisposable,
 
             bool UpdateMotionProvider(DeviceAxis axis, AxisState state, AxisSettings settings)
             {
-                var shouldUpdate = (state.InsideScript && !IsPlaying && settings.UpdateMotionProviderWhenPaused)
-                                || (!state.InsideScript && settings.UpdateMotionProviderWithoutScript)
-                                || (IsPlaying && state.InsideScript);
-
-                if (!shouldUpdate)
+                if (settings.SelectedMotionProvider == null)
+                    return false;
+                if (!settings.UpdateMotionProviderWhenPaused && !IsPlaying)
+                    return false;
+                if (!settings.UpdateMotionProviderWithoutScript && !state.InsideScript)
                     return false;
 
                 var newValue = MotionProviderManager.Update(axis, settings.SelectedMotionProvider, (float)stopwatch.Elapsed.TotalSeconds);
@@ -464,6 +468,8 @@ public class ScriptViewModel : Screen, IDeviceAxisValueProvider, IDisposable,
             if (settings.TryGetValue(nameof(SyncSettings), out var syncSettingsToken)) syncSettingsToken.Populate(SyncSettings);
         }
     }
+
+    public void Handle(SyncRequestMessage message) => ResetSync(true, message.Axes);
     #endregion
 
     #region Common
@@ -1250,7 +1256,7 @@ public class ScriptViewModel : Screen, IDeviceAxisValueProvider, IDisposable,
 
         s.RegisterAction("Axis::MotionProviderBlend::Set",
             b => b.WithSetting<DeviceAxis>(p => p.WithLabel("Target axis").WithItemsSource(DeviceAxis.All))
-                  .WithSetting<float>(p => p.WithLabel("Value"))
+                  .WithSetting<float>(p => p.WithLabel("Value").WithStringFormat("{}{0}%"))
                   .WithCallback((_, axis, value) =>
                         UpdateSettings(axis, s => s.MotionProviderBlend = MathUtils.Clamp(value, 0, 100))));
 
