@@ -41,8 +41,12 @@ public sealed class DeviceAxis
     public static string ToString(DeviceAxis axis, float value) => $"{axis}{string.Format(_outputFormat, value * _outputMaximum)}";
     public static string ToString(DeviceAxis axis, float value, int interval) => $"{ToString(axis, value)}I{interval}";
 
-    public static string ToString(IEnumerable<KeyValuePair<DeviceAxis, float>> values, int interval)
-        => $"{values.Aggregate(string.Empty, (s, x) => $"{s} {ToString(x.Key, x.Value, interval)}")}\n".TrimStart();
+
+// ISSUE: (no external bug tracker) Issue w/ Tempest firmware as of December 2021 where sometimes the last character is dropped
+// FIX: Add " A90" before \n this ensures the last character can be safely discarded as long as the user isn't using axis A9
+// FUTURE: remove this fix when no longer necessary for the firmware
+public static string ToString(IEnumerable<KeyValuePair<DeviceAxis, float>> values, int interval)
+        => $"{values.Aggregate(string.Empty, (s, x) => $"{s} {ToString(x.Key, x.Value, interval)}")} A90\n".TrimStart();
 
     public static bool IsDirty(float value, float lastValue)
         => float.IsFinite(value) && (!float.IsFinite(lastValue) || MathF.Abs(lastValue - value) * 999 >= 1);
