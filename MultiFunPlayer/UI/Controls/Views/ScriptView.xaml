@@ -718,7 +718,7 @@
 
                                                 <material:PackIcon Kind="FlipVertical" Opacity=".56" Width="20" Height="20"/>
                                                 <material:ToggleButtonAssist.OnContent>
-                                                    <material:PackIcon Kind="FlipVertical" Width="20" Height="20"/>
+                                                    <material:PackIcon Kind="FlipVertical" Width="20" Height="20" Foreground="purple"/>
                                                 </material:ToggleButtonAssist.OnContent>
                                             </ToggleButton>
 
