@@ -716,7 +716,7 @@
                                                           ToolTipService.Placement="Top"
                                                           ToolTip="Invert">
 
-                                                <material:PackIcon Kind="FlipVertical" Opacity=".56" Width="20" Height="20"/>
+                                                <material:PackIcon Kind="FlipVertical" Opacity=".42" Width="20" Height="20"/>
                                                 <material:ToggleButtonAssist.OnContent>
                                                     <material:PackIcon Kind="FlipVertical" Width="20" Height="20" Foreground="purple"/>
                                                 </material:ToggleButtonAssist.OnContent>
@@ -728,7 +728,7 @@
                                                           ToolTipService.Placement="Top"
                                                           ToolTip="Bypass">
 
-                                                <material:PackIcon Kind="MotionPauseOutline" Opacity=".56" Width="21" Height="21"/>
+                                                <material:PackIcon Kind="MotionPauseOutline" Opacity=".42" Width="21" Height="21"/>
                                                 <material:ToggleButtonAssist.OnContent>
                                                     <material:PackIcon Kind="MotionPauseOutline" Width="21" Height="21" Foreground="red"/>
                                                 </material:ToggleButtonAssist.OnContent>
@@ -904,7 +904,7 @@
                                                     </Style>
                                                 </ToggleButton.Resources>
 
-                                                <material:PackIcon Kind="ChartSnakeyVariant" Opacity=".56"/>
+                                                <material:PackIcon Kind="ChartSnakeyVariant" Opacity=".42"/>
                                                 <material:ToggleButtonAssist.OnContent>
                                                     <material:PackIcon Kind="ChartSnakeyVariant"/>
                                                 </material:ToggleButtonAssist.OnContent>
